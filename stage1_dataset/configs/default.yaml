@@ -1,0 +1,113 @@
+# =========================
+# Stage 1 — Dataset Builder
+# =========================
+
+run:
+  name: "stage1_wide_csv_v1"
+  random_seed: 1337
+
+paths:
+  # Input wide CSV (one row per trial, many dir_val_#### columns)
+  input_csv: "/home/ramanlab/Documents/cole/Data/Opto/Combined/all_envelope_rows_wide.csv"
+
+  # Optional: if you want to build from training-only CSV instead
+  # input_csv: "/mnt/data/all_envelope_rows_wide_training.csv"
+
+  # Optional: protocol mapping file you create (recommended)
+  # This is how you add odor identity / reward timing without hardcoding.
+  protocol_map_csv: ""  # e.g., "stage1_dataset/configs/protocol_map.csv" or leave blank
+
+  output_dir: "stage1_dataset/data"
+  reports_dir: "stage1_dataset/reports"
+  qc_dir: "stage1_dataset/data/qc_plots"
+
+schema:
+  # Required columns for trial indexing
+  required_cols: ["dataset", "fly", "fly_number", "trial_type", "trial_label"]
+
+  # Canonical ID fields we create
+  fly_id_format: "{dataset}::{fly}"
+
+  # Phase inference rule (string contains match)
+  phase_rules:
+    training_contains: ["train"]
+    testing_contains: ["test"]
+
+  # Pulse index extraction from trial_label (regex capture group)
+  pulse_idx_regex: "(\\d+)\\s*$"
+
+protocol:
+  # These columns are expected to exist after protocol_map join, but can be missing now.
+  odor_col: "odor_name"
+  reward_col: "reward"        # 0/1 or -1 unknown
+  cs_col: "cs_type"           # CS+, CS-, UNKNOWN
+  odor_on_s_col: "odor_on_s"  # optional (float seconds)
+  odor_off_s_col: "odor_off_s"
+
+trace:
+  # Time series columns are wide, named like dir_val_0000 ... dir_val_0599
+  trace_prefix: "dir_val_"
+
+  # Frames-per-second column; used to convert frame indices → seconds
+  fps_col: "fps"
+
+  # If your trace contains NaNs, optionally forward-fill/clip (safe defaults off)
+  fill_method: "none"        # one of: ["none", "ffill", "bfill", "interpolate"]
+  clip_min: null
+  clip_max: null
+
+windowing:
+  # If you do NOT yet have explicit odor-on/off indices per trial, you can still compute
+  # PER-like features from the full trace using a baseline segment.
+  #
+  # Later, when you have odor_on/off, you will update code to compute features strictly
+  # within the odor window. For now: baseline from early fraction of the trace.
+  baseline_frac: 0.20        # first 20% of frames used as baseline
+  analysis_frac: 1.00        # fraction of trace used for detection (1.0 = full)
+  # Future extension:
+  # use_protocol_odor_window: false
+
+detection:
+  # Threshold-based PER proxy:
+  # threshold = baseline_mean + k_std * baseline_std
+  k_std: 4.5
+
+  # Minimum duration above threshold to count as PER (seconds)
+  min_duration_s: 0.05
+
+  # Optional: require peak exceed threshold by margin (set to 0 to disable)
+  min_peak_over_threshold: 0.0
+
+features:
+  # Which features to export. Keep stable names.
+  export_cols:
+    - per
+    - latency_s
+    - duration_s
+    - baseline_mean
+    - baseline_std
+    - threshold
+    - peak
+    - auc_pos_s
+
+qc:
+  # Number of random trials to plot
+  n_random_trials: 30
+
+  # Distribution plots to generate
+  dist_cols: ["latency_s", "duration_s", "auc_pos_s", "peak", "per"]
+
+  # Stratification (only works once odor_name exists)
+  stratify_cols: ["phase", "trial_type", "odor_name"]
+
+filters:
+  # Optional filters to exclude junk trials (use your existing flags)
+  # If these columns do not exist, code should ignore gracefully.
+  drop_if_non_reactive_flag: false
+  non_reactive_flag_col: "non_reactive_flag"
+
+  drop_if_tracking_flagged: false
+  tracking_flag_col: "tracking_flagged"
+
+  # Optional: drop trials with too much missing trace data (fraction of NaNs)
+  max_nan_frac: 0.20
