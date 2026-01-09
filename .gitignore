@@ -24,7 +24,6 @@ artifacts/
 # Allow tracked templates/docs
 !**/configs/*.yaml
 !**/configs/*.yml
-!docs/**
 !README.md
 !LICENSE
 !Makefile
