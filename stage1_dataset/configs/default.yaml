@@ -10,12 +10,13 @@ paths:
   # Input wide CSV (one row per trial, many dir_val_#### columns)
   input_csv: "/home/ramanlab/Documents/cole/Data/Opto/Combined/all_envelope_rows_wide.csv"
 
-  # Optional: if you want to build from training-only CSV instead
-  # input_csv: "/mnt/data/all_envelope_rows_wide_training.csv"
+  # Training and testing CSV paths for protocol map generation
+  training_csv: "/home/ramanlab/Documents/cole/Data/Opto/Combined/all_envelope_rows_wide_training.csv"
+  testing_csv: "/home/ramanlab/Documents/cole/Data/Opto/Combined/all_envelope_rows_wide.csv"
+  model_predictions_csv: "/home/ramanlab/Documents/cole/Data/Opto/Combined/model_predictions.csv"
 
-  # Optional: protocol mapping file you create (recommended)
-  # This is how you add odor identity / reward timing without hardcoding.
-  protocol_map_csv: ""  # e.g., "stage1_dataset/configs/protocol_map.csv" or leave blank
+  # Protocol mapping file (auto-generated if missing)
+  protocol_map_csv: "stage1_dataset/data/protocol_map.csv"
 
   output_dir: "stage1_dataset/data"
   reports_dir: "stage1_dataset/reports"

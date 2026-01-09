@@ -10,6 +10,53 @@ import pandas as pd
 from .schema import standardize_trials
 from .features import compute_features_from_wide, apply_filters
 from .qc import make_qc_plots, write_qc_report
+from .protocol_map_builder import (
+    build_protocol_map_for_training,
+    build_protocol_map_for_testing,
+    merge_protocol_maps,
+)
+
+
+def _ensure_protocol_map(cfg: dict) -> Path:
+    """
+    Ensure protocol map exists. If not, auto-generate from training/testing CSVs.
+    Returns the path to the protocol map CSV.
+    """
+    protocol_map_path = Path(cfg['paths'].get('protocol_map_csv', '')).expanduser().resolve()
+    
+    if protocol_map_path.exists():
+        print(f"✓ Protocol map exists: {protocol_map_path}")
+        return protocol_map_path
+    
+    print(f"\n--- Auto-generating Protocol Map ---")
+    training_csv = Path(cfg['paths'].get('training_csv', '')).expanduser().resolve()
+    testing_csv = Path(cfg['paths'].get('testing_csv', '')).expanduser().resolve()
+    model_pred_csv = cfg['paths'].get('model_predictions_csv', '')
+    if model_pred_csv:
+        model_pred_csv = Path(model_pred_csv).expanduser().resolve()
+    
+    if not training_csv.exists():
+        raise FileNotFoundError(f"Training CSV not found: {training_csv}")
+    if not testing_csv.exists():
+        raise FileNotFoundError(f"Testing CSV not found: {testing_csv}")
+    
+    # Create temp protocol maps
+    training_map = protocol_map_path.parent / "protocol_map_training.csv"
+    testing_map = protocol_map_path.parent / "protocol_map_testing.csv"
+    
+    # Build training and testing maps
+    build_protocol_map_for_training(str(training_csv), str(training_map))
+    build_protocol_map_for_testing(
+        str(testing_csv),
+        str(testing_map),
+        str(model_pred_csv) if model_pred_csv.exists() else None
+    )
+    
+    # Merge them
+    merge_protocol_maps(str(training_map), str(testing_map), str(protocol_map_path))
+    
+    print(f"✓ Generated protocol map: {protocol_map_path}")
+    return protocol_map_path
 
 
 def run_stage1(cfg: dict) -> None:
@@ -49,6 +96,10 @@ def run_stage1(cfg: dict) -> None:
     df = pd.read_csv(input_csv)
     n_initial = len(df)
     print(f"✓ Loaded {n_initial} trials from input CSV")
+    
+    # Ensure protocol map exists (auto-generate if missing)
+    protocol_map_path = _ensure_protocol_map(cfg)
+    cfg['paths']['protocol_map_csv'] = str(protocol_map_path)  # Update config
     
     # Standardize trials (includes protocol join if configured)
     print(f"\n--- Trial Standardization ---")

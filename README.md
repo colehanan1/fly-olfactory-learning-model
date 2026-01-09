@@ -16,6 +16,17 @@ make stage1
 
 This runs the full Stage 1 pipeline and updates documentation.
 
+### Protocol Map Auto-Generation
+
+Stage 1 automatically generates protocol maps from training and testing CSVs if not present. The pipeline:
+
+1. **Reads training CSV** → extracts `dataset`, `trial_label`, and determines odor schedules
+2. **Reads testing CSV** → applies alias mapping and assigns odor names
+3. **Merges maps** → combines training/testing into a unified protocol map with `phase` field
+4. **Joins with features** → enriches output with `odor_name`, `odor_display`, `reward`, `cs_type`
+
+The protocol map is written to `stage1_dataset/data/protocol_map.csv` (gitignored, auto-generated).
+
 ## Security / Data Policy
 This repository is public. Do not commit raw data, derived data (csv/parquet/h5), plots, logs, or secrets.
 All outputs must be written to gitignored paths.
