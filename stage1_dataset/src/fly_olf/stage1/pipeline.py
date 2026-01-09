@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 import numpy as np
 import pandas as pd
@@ -89,3 +90,57 @@ def run_stage1(cfg: dict) -> None:
     print(f"\n{'='*70}")
     print(f"Stage 1 Complete!")
     print(f"{'='*70}\n")
+    
+    # Write run documentation (sanitized, no data paths)
+    _write_run_log(cfg, trials_path, features_path, qc_dir, report_path)
+
+def _write_run_log(cfg: dict, trials_path: Path, features_path: Path, qc_dir: Path, report_path: Path) -> None:
+    """Write a sanitized run log entry. Imports log_run module via subprocess to avoid circular deps."""
+    import json
+    import subprocess
+    from datetime import datetime
+    
+    # Prepare sanitized artifacts dict (no absolute paths)
+    artifacts = {
+        "trials": "data/trials.parquet",
+        "features": "data/features.parquet",
+        "qc_dir": "data/qc_plots/",
+        "qc_report": "reports/feature_extraction_qc.md",
+    }
+    
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    docs_dir = Path("docs") / "runs" / "stage1"
+    docs_dir.mkdir(parents=True, exist_ok=True)
+    out = docs_dir / f"{ts}_stage1.md"
+    
+    # Sanitize config (redact data-like paths)
+    def sanitize(obj):
+        if isinstance(obj, dict):
+            return {k: sanitize(v) for k, v in obj.items()}
+        if isinstance(obj, list):
+            return [sanitize(v) for v in obj]
+        if isinstance(obj, str):
+            s = obj
+            if s.startswith("/") or any(x in s.lower() for x in ["data", "parquet", "csv"]):
+                return "<REDACTED>"
+            return s
+        return obj
+    
+    try:
+        git_head = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+    except Exception:
+        git_head = "UNKNOWN"
+    
+    cfg_s = json.dumps(sanitize(cfg), indent=2, sort_keys=True)
+    lines = []
+    lines.append(f"# Run: stage1 — {ts}_stage1\n\n")
+    lines.append(f"- Git commit: `{git_head}`\n")
+    lines.append(f"- Command: `fly-olf-stage1 build --config stage1_dataset/configs/default.yaml`\n\n")
+    lines.append("## Artifacts\n")
+    for k, v in artifacts.items():
+        lines.append(f"- {k}: `{v}`\n")
+    lines.append("\n## Config (sanitized)\n")
+    lines.append("```json\n" + cfg_s + "\n```\n")
+    
+    out.write_text("".join(lines))
+    print(f"✓ Wrote run log: {out}")

@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pwd)",
+      "Bash(ls*)",
+      "Bash(find*)",
+      "Bash(rg*)",
+      "Bash(cat*)",
+      "Bash(sed*)",
+      "Bash(python*)",
+      "Bash(pip*)",
+      "Bash(make*)",
+      "Bash(git status)",
+      "Bash(git diff*)"
+    ]
+  }
+}

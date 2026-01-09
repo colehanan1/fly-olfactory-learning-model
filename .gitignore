@@ -1,58 +1,67 @@
-# Data files and outputs
-stage1_dataset/data/
-stage1_dataset/reports/
-*.csv
-*.parquet
+# ===================
+# Data / artifacts (NEVER COMMIT)
+# ===================
+data/
+outputs/
+artifacts/
+**/*.parquet
+**/*.h5
+**/*.hdf5
+**/*.csv
+**/*.tsv
+**/*.xlsx
+**/*.npy
+**/*.npz
+**/*.pkl
+**/*.joblib
+**/*.pt
+**/*.pth
+**/*.ckpt
+**/*.log
+**/*.png
+**/*.pdf
 
-# Raw data sources - DO NOT COMMIT
-/home/ramanlab/Documents/cole/Data/
+# Allow tracked templates/docs
+!**/configs/*.yaml
+!**/configs/*.yml
+!docs/**
+!README.md
+!LICENSE
+!Makefile
+!.github/**
+!.claude/**
+!AGENTS.md
+!CLAUDE.md
+!CHANGELOG.md
+!CONTRIBUTING.md
 
-# Python
+# ===================
+# Secrets / env
+# ===================
+.env
+.env.*
+**/*secret*
+**/*token*
+**/*apikey*
+**/*api_key*
+**/*credentials*
+**/*.key
+**/*.pem
+
+# ===================
+# Python build
+# ===================
 __pycache__/
 *.py[cod]
-*$py.class
-*.so
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
 *.egg-info/
-.installed.cfg
-*.egg
+dist/
+build/
+.venv/
+.mypy_cache/
+.pytest_cache/
 
-# Virtual environments
-venv/
-ENV/
-env/
-.venv
-
+# ===================
 # IDE
+# ===================
 .vscode/
 .idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
-Thumbs.db
-
-# Outputs and artifacts
-*.png
-*.pdf
-*.log
-*.tmp
