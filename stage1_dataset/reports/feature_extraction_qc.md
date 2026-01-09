@@ -6,8 +6,8 @@
 - **Features parquet**: `features.parquet`
 
 ### Row Counts
-- Initial trials loaded: 1700
-- Trials after filters: 1700
+- Initial trials loaded: 3022
+- Trials after filters: 65545
 
 ### Configuration Snapshot
 ```yaml
@@ -33,10 +33,13 @@ filters:
   tracking_flag_col: tracking_flagged
 paths:
   input_csv: /home/ramanlab/Documents/cole/Data/Opto/Combined/all_envelope_rows_wide.csv
+  model_predictions_csv: /home/ramanlab/Documents/cole/Data/Opto/Combined/model_predictions.csv
   output_dir: stage1_dataset/data
-  protocol_map_csv: ''
+  protocol_map_csv: /home/ramanlab/Documents/cole/VSCode/fly-olfactory-learning-model/stage1_dataset/data/protocol_map.csv
   qc_dir: stage1_dataset/data/qc_plots
   reports_dir: stage1_dataset/reports
+  testing_csv: /home/ramanlab/Documents/cole/Data/Opto/Combined/all_envelope_rows_wide.csv
+  training_csv: /home/ramanlab/Documents/cole/Data/Opto/Combined/all_envelope_rows_wide_training.csv
 protocol:
   cs_col: cs_type
   odor_col: odor_name
@@ -56,6 +59,7 @@ qc:
   - trial_type
   - odor_name
 run:
+  combine_train_test: true
   name: stage1_wide_csv_v1
   random_seed: 1337
 schema:

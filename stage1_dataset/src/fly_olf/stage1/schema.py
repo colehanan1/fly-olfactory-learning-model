@@ -5,6 +5,8 @@ from __future__ import annotations
 from pathlib import Path
 import pandas as pd
 
+from .protocol_map_builder import TESTING_DATASET_ALIAS
+
 
 def standardize_trials(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     """Standardize trial schema and optionally join protocol metadata.
@@ -55,6 +57,14 @@ def standardize_trials(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     )
     out["pulse_idx"] = out["pulse_idx"].fillna(-1).astype(int)
     
+    # Compute dataset_key for join: apply TESTING_DATASET_ALIAS for testing phase
+    out["dataset_key"] = out.apply(
+        lambda row: TESTING_DATASET_ALIAS.get(row["dataset"], row["dataset"])
+        if row["phase"] == "testing"
+        else row["dataset"],
+        axis=1
+    )
+    
     # Protocol map join (optional)
     protocol_map_path = cfg['paths'].get('protocol_map_csv', '')
     if protocol_map_path and protocol_map_path.strip():
@@ -63,17 +73,40 @@ def standardize_trials(df: pd.DataFrame, cfg: dict) -> pd.DataFrame:
             proto_df = pd.read_csv(protocol_path)
             
             # Validate required protocol columns
-            proto_required = ['dataset', 'trial_label', 'odor_name', 'reward', 'cs_type']
+            proto_required = ['dataset_key', 'phase', 'pulse_idx', 'odor_name', 'reward', 'cs_type']
             proto_missing = [c for c in proto_required if c not in proto_df.columns]
             if proto_missing:
                 raise ValueError(
                     f"Protocol map CSV missing required columns: {proto_missing}. "
-                    f"Required: {proto_required}"
+                    f"Required: {proto_required}. "
+                    f"Path: {protocol_path}"
                 )
             
-            # Join on dataset and trial_label
-            join_keys = ['dataset', 'trial_label']
-            out = out.merge(proto_df, on=join_keys, how='left', suffixes=('', '_proto'))
+            # Join on (dataset_key, phase, pulse_idx)
+            join_keys = ['dataset_key', 'phase', 'pulse_idx']
+            pre_merge_count = len(out)
+            out = out.merge(
+                proto_df[join_keys + ['odor_name', 'reward', 'cs_type']],
+                on=join_keys,
+                how='left',
+                suffixes=('', '_proto')
+            )
+            
+            # Hard-fail if any protocol fields are null (join failed)
+            null_odor = out["odor_name"].isna().sum()
+            null_reward = out["reward"].isna().sum()
+            null_cs = out["cs_type"].isna().sum()
+            
+            if null_odor > 0 or null_reward > 0 or null_cs > 0:
+                raise ValueError(
+                    f"Protocol join produced {null_odor} null odor_name, "
+                    f"{null_reward} null reward, {null_cs} null cs_type out of {pre_merge_count} rows. "
+                    f"Join keys {join_keys} did not match. "
+                    f"This indicates a mismatch between input data and protocol_map. "
+                    f"Sample input dataset_key: {out['dataset_key'].unique()[:5]}, "
+                    f"sample input phase: {out['phase'].unique()}, "
+                    f"sample input pulse_idx: {sorted(out['pulse_idx'].unique())[:10]}"
+                )
             
             print(f"✓ Joined protocol map from {protocol_path} on {join_keys}")
         else:

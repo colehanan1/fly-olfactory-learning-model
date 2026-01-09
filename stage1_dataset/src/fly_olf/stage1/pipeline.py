@@ -73,8 +73,7 @@ def run_stage1(cfg: dict) -> None:
     random_seed = int(cfg['run'].get('random_seed', 1337))
     np.random.seed(random_seed)
     
-    # Resolve paths
-    input_csv = Path(cfg['paths']['input_csv']).expanduser().resolve()
+    # Resolve output paths
     out_dir = Path(cfg['paths']['output_dir']).expanduser().resolve()
     reports_dir = Path(cfg['paths']['reports_dir']).expanduser().resolve()
     qc_dir = Path(cfg['paths']['qc_dir']).expanduser().resolve()
@@ -88,14 +87,45 @@ def run_stage1(cfg: dict) -> None:
     print(f"\n{'='*70}")
     print(f"Stage 1 Pipeline")
     print(f"{'='*70}")
-    print(f"\n✓ Input CSV: {input_csv}")
     
-    if not input_csv.exists():
-        raise FileNotFoundError(f"Input CSV not found: {input_csv}")
+    # Check if combine_train_test is enabled
+    combine_train_test = cfg['run'].get('combine_train_test', False)
     
-    df = pd.read_csv(input_csv)
-    n_initial = len(df)
-    print(f"✓ Loaded {n_initial} trials from input CSV")
+    if combine_train_test:
+        # Load both training and testing CSVs, tag phase, and combine
+        print(f"\n✓ Combining training and testing datasets (combine_train_test=true)")
+        
+        training_csv = Path(cfg['paths'].get('training_csv', '')).expanduser().resolve()
+        testing_csv = Path(cfg['paths'].get('testing_csv', '')).expanduser().resolve()
+        
+        if not training_csv.exists():
+            raise FileNotFoundError(f"Training CSV not found: {training_csv}")
+        if not testing_csv.exists():
+            raise FileNotFoundError(f"Testing CSV not found: {testing_csv}")
+        
+        print(f"  Loading training from {training_csv}")
+        df_train = pd.read_csv(training_csv)
+        print(f"    Loaded {len(df_train)} training trials")
+        
+        print(f"  Loading testing from {testing_csv}")
+        df_test = pd.read_csv(testing_csv)
+        print(f"    Loaded {len(df_test)} testing trials")
+        
+        # Combine
+        df = pd.concat([df_train, df_test], ignore_index=True)
+        n_initial = len(df)
+        print(f"✓ Combined: {n_initial} total trials ({len(df_train)} training + {len(df_test)} testing)")
+    else:
+        # Load only input_csv (original behavior)
+        input_csv = Path(cfg['paths']['input_csv']).expanduser().resolve()
+        print(f"\n✓ Input CSV: {input_csv}")
+        
+        if not input_csv.exists():
+            raise FileNotFoundError(f"Input CSV not found: {input_csv}")
+        
+        df = pd.read_csv(input_csv)
+        n_initial = len(df)
+        print(f"✓ Loaded {n_initial} trials from input CSV")
     
     # Ensure protocol map exists (auto-generate if missing)
     protocol_map_path = _ensure_protocol_map(cfg)
@@ -195,3 +225,92 @@ def _write_run_log(cfg: dict, trials_path: Path, features_path: Path, qc_dir: Pa
     
     out.write_text("".join(lines))
     print(f"✓ Wrote run log: {out}")
+
+
+def audit_stage1_output(cfg: dict) -> None:
+    """
+    Audit Stage 1 output for data quality and completeness.
+    
+    Hard-fails if:
+    - features.parquet or trials.parquet missing
+    - odor_name has any null or UNKNOWN values
+    - phase does not include both training and testing
+    
+    Prints: nrows, nunique(odor_name), UNKNOWN count, phase distribution
+    
+    Args:
+        cfg: Configuration dictionary
+        
+    Raises:
+        FileNotFoundError: If output files missing
+        ValueError: If data quality checks fail
+    """
+    print(f"\n{'='*70}")
+    print(f"Stage 1 Audit")
+    print(f"{'='*70}\n")
+    
+    out_dir = Path(cfg['paths']['output_dir']).expanduser().resolve()
+    features_path = out_dir / "features.parquet"
+    trials_path = out_dir / "trials.parquet"
+    
+    # Check file existence
+    if not features_path.exists():
+        raise FileNotFoundError(f"features.parquet not found: {features_path}")
+    if not trials_path.exists():
+        raise FileNotFoundError(f"trials.parquet not found: {trials_path}")
+    
+    print(f"✓ Loading features from {features_path}")
+    features = pd.read_parquet(features_path)
+    print(f"  Shape: {features.shape}")
+    
+    # Check odor_name column exists
+    if "odor_name" not in features.columns:
+        raise ValueError(f"features.parquet missing 'odor_name' column")
+    if "phase" not in features.columns:
+        raise ValueError(f"features.parquet missing 'phase' column")
+    
+    # Check for nulls
+    null_odor = features["odor_name"].isna().sum()
+    if null_odor > 0:
+        raise ValueError(
+            f"❌ AUDIT FAILED: {null_odor} null values in odor_name "
+            f"({100.0*null_odor/len(features):.1f}% of {len(features)} rows)"
+        )
+    
+    # Check for UNKNOWN
+    unknown_count = (features["odor_name"] == "UNKNOWN").sum()
+    unknown_pct = 100.0 * unknown_count / len(features) if len(features) > 0 else 0.0
+    
+    if unknown_count > 0:
+        raise ValueError(
+            f"❌ AUDIT FAILED: {unknown_count} UNKNOWN values in odor_name "
+            f"({unknown_pct:.1f}% of {len(features)} rows). "
+            f"Expected 0 UNKNOWN (indicates failed protocol join)."
+        )
+    
+    # Get odor_name distribution
+    nunique_odor = features["odor_name"].nunique()
+    print(f"\n✓ Odor identity:")
+    print(f"  Unique odor_names: {nunique_odor}")
+    odor_counts = features["odor_name"].value_counts().to_dict()
+    for odor in sorted(odor_counts.keys()):
+        count = odor_counts[odor]
+        print(f"    {odor}: {count}")
+    
+    # Check phase distribution
+    if "phase" in features.columns:
+        phase_counts = features["phase"].value_counts().to_dict()
+        print(f"\n✓ Phase distribution:")
+        for phase in ["training", "testing"]:
+            count = phase_counts.get(phase, 0)
+            pct = 100.0 * count / len(features) if len(features) > 0 else 0.0
+            print(f"    {phase}: {count} ({pct:.1f}%)")
+            if phase not in phase_counts or count == 0:
+                raise ValueError(
+                    f"❌ AUDIT FAILED: phase '{phase}' has 0 rows. "
+                    f"Expected both training and testing phases to be present."
+                )
+    
+    print(f"\n{'='*70}")
+    print(f"✅ AUDIT PASSED")
+    print(f"{'='*70}\n")

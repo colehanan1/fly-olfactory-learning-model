@@ -5,6 +5,7 @@
 run:
   name: "stage1_wide_csv_v1"
   random_seed: 1337
+  combine_train_test: true  # NEW: Load both training and testing CSVs, combine, then build
 
 paths:
   # Input wide CSV (one row per trial, many dir_val_#### columns)

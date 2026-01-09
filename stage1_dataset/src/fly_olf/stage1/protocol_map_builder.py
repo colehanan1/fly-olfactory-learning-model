@@ -134,10 +134,8 @@ TRAINING_ODOR_SCHEDULE_OVERRIDES = {
         2: "Ethyl Butyrate",
         3: "Ethyl Butyrate",
         4: "Ethyl Butyrate",
-        5: HEXANOL,
+        5: "Ethyl Butyrate",
         6: "Ethyl Butyrate",
-        7: HEXANOL,
-        8: "Ethyl Butyrate",
     },
     "opto_AIR": {
         1: "AIR",
@@ -203,9 +201,24 @@ TESTING_PULSE_ODOR_MAPPING = {
     },
     "3-octonol": {6: "Benzaldehyde", 7: "Citral", 8: "Linalool"},
     "Benz": {6: "Citral", 7: "Linalool"},
+    "Benz_control": {6: "Apple Cider Vinegar", 7: "3-Octonol", 8: "Ethyl Butyrate", 9: "Citral", 10: "Linalool"},  # NEW
     "benz_control": {6: "Apple Cider Vinegar", 7: "3-Octonol", 8: "Ethyl Butyrate", 9: "Citral", 10: "Linalool"},
     "EB": {6: "Apple Cider Vinegar", 7: "3-Octonol", 8: "Benzaldehyde", 9: "Citral", 10: "Linalool"},
     "EB_control": {
+        6: "Apple Cider Vinegar",
+        7: "3-Octonol",
+        8: "Benzaldehyde",
+        9: "Citral",
+        10: "Linalool",
+    },
+    "opto_EB": {  # NEW: same as EB_control
+        6: "Apple Cider Vinegar",
+        7: "3-Octonol",
+        8: "Benzaldehyde",
+        9: "Citral",
+        10: "Linalool",
+    },
+    "opto_EB(6-training)": {  # Same as opto_EB (not EB_control)
         6: "Apple Cider Vinegar",
         7: "3-Octonol",
         8: "Benzaldehyde",
@@ -279,6 +292,7 @@ def build_protocol_map_for_training(training_csv_path: str, out_csv_path: str) -
     - Pulses 1-4, 6, 8: Primary odor (CS+), reward=1
     - Pulses 5, 7: Interleaved odor (CS-), reward=0 (no reward given during training)
     - Use TRAINING_ODOR_SCHEDULE_OVERRIDES if dataset in overrides, else DEFAULT
+    - dataset_key = dataset (the condition/experiment key)
     """
     print(f"[Training] Loading from {training_csv_path}")
     train_df = pd.read_csv(training_csv_path)
@@ -320,6 +334,7 @@ def build_protocol_map_for_training(training_csv_path: str, out_csv_path: str) -
             cs_type = "CS+"
 
         records.append({
+            "dataset_key": dataset,  # NEW: condition/experiment key for join
             "dataset": dataset,
             "trial_label": trial_label,
             "pulse_idx": pulse_idx,
@@ -333,12 +348,28 @@ def build_protocol_map_for_training(training_csv_path: str, out_csv_path: str) -
     out_df = pd.DataFrame(records)
     print(f"  Generated {len(out_df)} rows")
     
-    # Check for duplicates on (dataset, trial_label) - must be unique per row since fly varies
-    dup_count = out_df.duplicated(subset=["dataset", "trial_label"], keep=False).sum()
-    if dup_count > 0:
-        # This is expected - same trial_label appears for multiple flies
-        # We keep all since protocol_map is used in a join on (dataset, trial_label)
-        pass
+    # Validate uniqueness on (dataset_key, phase, pulse_idx) WITHIN each dataset/fly combo
+    # Note: Multiple flies can have the same (dataset_key, phase, pulse_idx), and they MUST
+    # map to the same odor_name. We'll deduplicate on this key and validate consistency.
+    dup_check = out_df[['dataset_key', 'phase', 'pulse_idx', 'odor_name']].drop_duplicates()
+    if len(dup_check) < len(out_df):
+        # There are multiple rows with same (dataset_key, phase, pulse_idx)
+        # Check if they all have the same odor_name
+        for _, row in dup_check.iterrows():
+            matching = out_df[
+                (out_df['dataset_key'] == row['dataset_key']) &
+                (out_df['phase'] == row['phase']) &
+                (out_df['pulse_idx'] == row['pulse_idx'])
+            ]
+            unique_odors = matching['odor_name'].unique()
+            if len(unique_odors) > 1:
+                raise ValueError(
+                    f"Inconsistent odor mapping for dataset_key={row['dataset_key']}, "
+                    f"phase={row['phase']}, pulse_idx={row['pulse_idx']}: "
+                    f"Got odors {unique_odors.tolist()}"
+                )
+    
+    print(f"  ✓ Odor mapping is consistent")
 
     out_df.to_csv(out_csv_path, index=False)
     print(f"  Written to {out_csv_path}")
@@ -352,10 +383,14 @@ def build_protocol_map_for_testing(
     """
     Generate protocol map for testing data.
 
-    Reads testing wide CSV, applies dataset alias mapping, uses TESTING_PULSE_ODOR_MAPPING
-    to assign odor_name based on pulse_idx.
+    Reads testing wide CSV, applies dataset alias mapping, and assigns odors:
+    - For pulses 1-5: use the training schedule (CS and learned odors)
+    - For pulses 6-10: use TESTING_PULSE_ODOR_MAPPING (test odors)
 
-    For reward/cs_type: marked as UNKNOWN unless model_predictions_csv provides PER labels.
+    For reward/cs_type: marked as UNKNOWN for testing.
+    
+    dataset_key is computed by applying TESTING_DATASET_ALIAS to map opto_* variants to
+    their base condition keys.
     """
     print(f"[Testing] Loading from {testing_csv_path}")
     test_df = pd.read_csv(testing_csv_path)
@@ -383,16 +418,26 @@ def build_protocol_map_for_testing(
             print(f"  Warning: Could not extract pulse_idx from trial_label={trial_label}, skipping")
             continue
 
-        # Apply dataset alias if needed
-        alias_dataset = TESTING_DATASET_ALIAS.get(dataset, dataset)
+        # Apply dataset alias to get base condition key
+        dataset_key = TESTING_DATASET_ALIAS.get(dataset, dataset)
 
-        # Get odor mapping for this dataset+pulse
+        # Determine odor name: pulses 1-5 from training schedule, 6-10 from testing mapping
         odor_name = "UNKNOWN"
-        if alias_dataset in TESTING_PULSE_ODOR_MAPPING:
-            pulse_map = TESTING_PULSE_ODOR_MAPPING[alias_dataset]
-            odor_name = pulse_map.get(pulse_idx, "UNKNOWN")
+        
+        if pulse_idx in range(1, 6):
+            # Pulses 1-5: use training schedule to get CS/learned odors
+            if dataset_key in TRAINING_ODOR_SCHEDULE_OVERRIDES:
+                schedule = TRAINING_ODOR_SCHEDULE_OVERRIDES[dataset_key]
+            else:
+                schedule = TRAINING_ODOR_SCHEDULE_DEFAULT
+            odor_name = schedule.get(pulse_idx, "UNKNOWN")
+        else:
+            # Pulses 6-10: use testing pulse mapping
+            if dataset_key in TESTING_PULSE_ODOR_MAPPING:
+                pulse_map = TESTING_PULSE_ODOR_MAPPING[dataset_key]
+                odor_name = pulse_map.get(pulse_idx, "UNKNOWN")
 
-        # For testing, reward is UNKNOWN unless we have PER labels
+        # For testing, reward is UNKNOWN
         reward = -1
         cs_type = "UNKNOWN"
         per_prediction = per_dict.get((dataset, fly, trial_label), None)
@@ -402,6 +447,7 @@ def build_protocol_map_for_testing(
             pass
 
         records.append({
+            "dataset_key": dataset_key,  # mapped condition key for join
             "dataset": dataset,
             "trial_label": trial_label,
             "pulse_idx": pulse_idx,
@@ -415,6 +461,27 @@ def build_protocol_map_for_testing(
     out_df = pd.DataFrame(records)
     print(f"  Generated {len(out_df)} rows")
 
+    # Validate consistency: same (dataset_key, phase, pulse_idx) should always map to same odor
+    dup_check = out_df[['dataset_key', 'phase', 'pulse_idx', 'odor_name']].drop_duplicates()
+    if len(dup_check) < len(out_df):
+        # There are multiple rows with same (dataset_key, phase, pulse_idx)
+        # Check if they all have the same odor_name
+        for _, row in dup_check.iterrows():
+            matching = out_df[
+                (out_df['dataset_key'] == row['dataset_key']) &
+                (out_df['phase'] == row['phase']) &
+                (out_df['pulse_idx'] == row['pulse_idx'])
+            ]
+            unique_odors = matching['odor_name'].unique()
+            if len(unique_odors) > 1:
+                raise ValueError(
+                    f"Inconsistent odor mapping for dataset_key={row['dataset_key']}, "
+                    f"phase={row['phase']}, pulse_idx={row['pulse_idx']}: "
+                    f"Got odors {unique_odors.tolist()}"
+                )
+    
+    print(f"  ✓ Odor mapping is consistent")
+
     out_df.to_csv(out_csv_path, index=False)
     print(f"  Written to {out_csv_path}")
 
@@ -422,20 +489,26 @@ def build_protocol_map_for_testing(
 def merge_protocol_maps(training_map_path: str, testing_map_path: str, out_csv_path: str) -> None:
     """
     Merge training and testing protocol maps into a single file for Stage 1 to use.
+    
+    No deduplication needed: we keep all (dataset_key, phase, pulse_idx) rows across 
+    all flies because we'll join on these keys and pandas will handle the many-to-many
+    mapping appropriately.
     """
     print(f"[Merge] Combining training and testing protocol maps...")
     train_map = pd.read_csv(training_map_path)
     test_map = pd.read_csv(testing_map_path)
     
     # Ensure required columns
-    required = ["dataset", "trial_label", "odor_name", "reward", "cs_type"]
+    required = ["dataset_key", "phase", "pulse_idx", "odor_name", "reward", "cs_type"]
     for col in required:
-        if col not in train_map.columns or col not in test_map.columns:
-            raise ValueError(f"Missing required column: {col}")
+        if col not in train_map.columns:
+            raise ValueError(f"Training map missing required column: {col}")
+        if col not in test_map.columns:
+            raise ValueError(f"Testing map missing required column: {col}")
     
     merged = pd.concat([train_map, test_map], ignore_index=True)
     print(f"  Training rows: {len(train_map)}, Testing rows: {len(test_map)}")
     print(f"  Merged rows: {len(merged)}")
     
     merged.to_csv(out_csv_path, index=False)
-    print(f"  Written to {out_csv_path}")
+    print(f"  ✓ Validated and written to {out_csv_path}")
