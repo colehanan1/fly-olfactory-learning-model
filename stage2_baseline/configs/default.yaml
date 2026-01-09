@@ -1,0 +1,39 @@
+# Stage 2 Baseline Configuration
+
+run:
+  name: "stage2_baseline_v1"
+  random_seed: 1337
+
+paths:
+  features_parquet: "stage1_dataset/data/features.parquet"
+  output_dir: "outputs/stage2"
+  predictions_file: "outputs/stage2/predictions.parquet"
+  metrics_file: "outputs/stage2/metrics.json"
+
+data:
+  # Phase filtering: list of phases to include (empty = all phases)
+  phases: []  # ["training", "testing"] or [] for all
+  target_column: "per"
+
+door:
+  # DoOR odor encoding settings
+  cache_dir: "door_cache"  # Path to DoOR cache directory
+  fill_missing: 0.0  # Value to use for missing ORN responses
+  cache_enabled: true
+
+model:
+  # Logistic regression with L2 regularization
+  model_type: "logistic_regression"
+  solver: "liblinear"  # or "saga"
+  C: 1.0  # Inverse regularization strength
+  max_iter: 1000
+  standardize_features: true
+
+cv:
+  # Cross-validation schemes
+  n_splits: 5
+  schemes:
+    - name: "odor_holdout"
+      group_by: "odor_name"
+    - name: "fly_holdout"
+      group_by: "fly_id"

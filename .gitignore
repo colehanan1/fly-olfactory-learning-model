@@ -4,6 +4,7 @@
 data/
 outputs/
 artifacts/
+door_cache/
 **/*.parquet
 **/*.h5
 **/*.hdf5
@@ -24,6 +25,7 @@ artifacts/
 # Allow tracked templates/docs
 !**/configs/*.yaml
 !**/configs/*.yml
+!docs/**/*.md
 !README.md
 !LICENSE
 !Makefile
