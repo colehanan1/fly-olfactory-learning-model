@@ -1,6 +1,9 @@
 # fly-olfactory-learning-model
 A behavior-first, imaging-ready framework for modeling Drosophila olfactory learning. Builds trial-level datasets from proboscis traces, encodes odors via DoOR, and implements online, biologically inspired plasticity to infer and control learning dynamics in closed-loop experiments.
 
+**Project Status**: Stage 1 ✅ | Stage 2 ✅ | Stage 3 ⏳  
+For detailed progress, see [docs/PROJECT_STATUS.md](docs/PROJECT_STATUS.md).
+
 ## Stage 1: Dataset Builder
 
 ### Quick Start
